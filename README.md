@@ -31,3 +31,13 @@ Matthew Manberg
 Phone: 201-906-5954
 
 Email: mmanber1@bu.edu
+
+--------------------------------
+
+Alejandro Diaz
+
+Phone: (617)895-9705
+
+Email: alejdiaz@bu.edu
+
+--------------------------------
