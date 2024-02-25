@@ -16,3 +16,28 @@ Phone: (617) 682-5980
 
 Email: bastian6@bu.edu
 
+--------------------------------
+
+Jianrui Liu
+
+Phone: (805)259-7171
+
+Email: jianrui@bu.edu
+
+--------------------------------
+
+Matthew Manberg
+
+Phone: 201-906-5954
+
+Email: mmanber1@bu.edu
+
+--------------------------------
+
+Alejandro Diaz
+
+Phone: (617)895-9705
+
+Email: alejdiaz@bu.edu
+
+--------------------------------
