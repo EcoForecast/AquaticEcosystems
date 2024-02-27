@@ -1,10 +1,10 @@
 ### Aquatic Forecast Workflow ###
-devtools::install_github("eco4cast/neon4cast")
+#devtools::install_github("eco4cast/neon4cast")
 library(tidyverse)
-library(neon4cast)
+#library(neon4cast)
 library(lubridate)
-install.packages("rMR")
-library(rMR)
+#install.packages("rMR")
+#library(rMR)
 
 forecast_date <- Sys.Date()
 noaa_date <- Sys.Date() - days(1)  #Need to use yesterday's NOAA forecast because today's is not available yet
@@ -39,18 +39,41 @@ if(file.exists("site_temp_oxygen_data.R"))      source("site_temp_oxygen_data.R"
 
 
 ### Step 1: Download Required Data
-target     <- download_targets()       ## Y variables
+download <- download_targets()       ## Y variables
+
+target <- download[[1]]
+site_names <- download[[2]]
+
 site_data  <- download_site_meta()
-target     <- merge_met_past(target)   ## append met data (X) into target file
-met_future <- download_met_forecast(forecast_date) ## Weather forecast (future X)
+ox_temp <- filter_ox_temp(target)
 
-# ## visual check of data
-# ggplot(target, aes(x = temperature, y = air_temperature)) +
-#   geom_point() +
-#   labs(x = "NEON water temperature (C)", y = "NOAA air temperature (C)") +
-#   facet_wrap(~site_id)
+target_oxygen <- ox_temp[[1]]
+target_temp <- ox_temp[[2]]
 
-# met_future %>% 
-#   ggplot(aes(x = datetime, y = air_temperature, group = parameter)) +
-#   geom_line() +
-#   facet_grid(~site_id, scale ="free")
+# Plot oxygen and temperature for each site
+for(site in site_names){
+  dates_oxygen <- target_oxygen |> 
+    filter(site_id == site) |> 
+    select(datetime)
+  site_oxygen <- target_oxygen |> 
+    filter(site_id == site) |> 
+    select(observation)
+  
+  dates_temp <- target_temp |> 
+    filter(site_id == site) |> 
+    select(datetime)
+  site_temp <- target_temp |> 
+    filter(site_id == site) |> 
+    select(observation)
+  
+  plot(dates_oxygen$datetime, site_oxygen$observation,
+       xlab = "Date",
+       ylab = "Oxygen",
+       main = site,
+  )
+  plot(dates_temp$datetime, site_temp$observation,
+       xlab = "Date",
+       ylab = "Temperature",
+       main = site,
+  )
+}
