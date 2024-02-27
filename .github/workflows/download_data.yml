@@ -2,8 +2,8 @@ on:
     workflow_dispatch:
     schedule:
     - cron: "0 20 * * *"
-  
-  jobs:
+
+jobs:
     build:
       runs-on: ubuntu-latest
       container:
