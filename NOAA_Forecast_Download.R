@@ -92,3 +92,42 @@ for (site_id in site_ids) {
   future_data_list[[site_id]] <- df_future
 }
 save(future_data_list, file = paste0("future_data_", variable_of_interest, ".Rdata"))
+
+
+################################################################################
+#Plots
+
+
+#Historical
+
+
+# Combine all data frames into one
+combined_data <- bind_rows(past_data_list, .id = "Site_ID")
+
+# Plotting
+ggplot(combined_data, aes(x = datetime, y = mean_prediction, color = Site_ID)) +
+  geom_line() +
+  labs(x = "Date", y = "Mean Prediction", color = "Site ID") +
+  ggtitle("Historical Air Temperature Mean Prediction") +
+  theme_minimal()
+
+
+#Future 
+
+# Combine all data frames into one
+combined_data <- bind_rows(future_data_list, .id = "Site_ID")
+
+# Plotting
+ggplot(combined_data, aes(x = datetime, y = mean_prediction, color = Site_ID)) +
+  geom_line() +
+  labs(x = "Date", y = "Mean Prediction", color = "Site ID") +
+  ggtitle("Historical Air Temperature Mean Prediction") +
+  theme_minimal()
+
+
+
+
+
+
+
+
