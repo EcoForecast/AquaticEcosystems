@@ -31,12 +31,12 @@ team_info <- list(team_name = "AquaticEcosystems",
                   list(individualName = list(givenName = "Alejandro", 
                                         surName = "Diaz"),
                       organizationName = "Boston University",
-                      electronicMailAddress = "lejdiaz@bu.edu"))
+                      electronicMailAddress = "alejdiaz@bu.edu"))
 )
 
 ## Load required functions
 if(file.exists("site_temp_oxygen_data.R"))      source("site_temp_oxygen_data.R")
-
+if(file.exists("NOAA_Forecast_download.R"))    source("NOAA_Forecast_download.R")
 
 ### Step 1: Download Required Data
 download <- download_targets()       ## Y variables
