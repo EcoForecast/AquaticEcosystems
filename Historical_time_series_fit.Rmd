@@ -1,0 +1,230 @@
+---
+title: "Historical_time_series_fit"
+output: html_document
+date: "2024-03-18"
+editor_options: 
+  chunk_output_type: inline
+---
+
+#Import Historical 
+
+
+```{r}
+library(neon4cast)
+library(dplyr)
+library(lubridate)
+library(ggplot2)
+library(arrow)
+library(glue)
+library(readr)
+library(rjags)
+#library(rnoaa)
+library(daymetr)
+#devtools::install_github("EcoForecast/ecoforecastR",force=TRUE)
+library(ecoforecastR)
+library(zoo)
+library(padr)
+
+
+```
+
+
+
+```{r}
+
+
+target <- readr::read_csv("https://data.ecoforecast.org/neon4cast-targets/aquatics/aquatics-targets.csv.gz", guess_max = 1e6)
+
+site_data <- readr::read_csv("https://raw.githubusercontent.com/eco4cast/neon4cast-targets/main/NEON_Field_Site_Metadata_20220412.csv") |> 
+  filter(aquatics == 1)
+
+site_ids <- target |> na.omit() |> distinct(site_id, variable) |> 
+  filter(variable %in% c("oxygen", "temperature")) |>
+  count(site_id) |> filter(n==2) |> pull(site_id)
+
+# Load historical data using neon4cast
+df_past <- neon4cast::noaa_stage3()
+
+# Helper function for historical data
+noaa_mean_historical <- function(df_past, site, var) {
+  df_past |>
+    dplyr::filter(site_id == site, variable == var) |>
+    dplyr::rename(ensemble = parameter) |>
+    dplyr::select(datetime, prediction, ensemble) |>
+    dplyr::mutate(date = as_date(datetime)) |>
+    dplyr::group_by(date) |>
+    dplyr::summarize(mean_prediction = mean(prediction, na.rm = TRUE), .groups = "drop") |>
+    dplyr::rename(datetime = date) |>
+    dplyr::mutate(mean_prediction = if_else(var == "air_temperature", mean_prediction, mean_prediction)) |>
+    dplyr::collect()
+}
+
+# Helper function to download future forecast data for a site and variable
+noaa_mean_forecast <- function(site, var, reference_date) {
+  endpoint <- "data.ecoforecast.org"
+  bucket <- glue::glue("neon4cast-drivers/noaa/gefs-v12/stage2/parquet/0/{reference_date}")
+  s3 <- arrow::s3_bucket(bucket, endpoint_override = endpoint, anonymous = TRUE)
+  
+  ds <- arrow::open_dataset(s3)
+  
+  forecast_date <- as_datetime(reference_date)
+  
+  # Filter, select, and process data
+  ds %>%
+    dplyr::filter(site_id == site,
+                  datetime >= forecast_date,
+                  variable == var) %>%
+    dplyr::select(datetime, prediction, parameter) %>%
+    dplyr::mutate(datetime = as_date(datetime)) %>%
+    dplyr::group_by(datetime, parameter) %>%
+    dplyr::summarize(mean_prediction = mean(prediction, na.rm = TRUE), .groups = "drop") %>%
+    dplyr::select(datetime, mean_prediction, parameter) %>%
+    dplyr::rename(ensemble = parameter) %>%
+    dplyr::collect()
+}
+
+################################################################################
+#Historical Forecast
+
+# Variables of interest
+variable_of_interest <- "air_temperature" # Adjust as needed
+
+# Initialize lists to store data frames for "air_temperature"
+past_data_list <- list()
+
+# Loop through site IDs directly
+for (site_id in site_ids) {
+  # Load historical data using neon4cast
+  df_past <- neon4cast::noaa_stage3()
+  
+  # Fetch and process historical data for the site
+  df_past_processed <- noaa_mean_historical(df_past, site_id, variable_of_interest)
+  past_data_list[[site_id]] <- df_past_processed
+}
+
+# Save the past data for "air_temperature" across all sites
+save(past_data_list, file = "past_data_air_temperature.Rdata")
+
+################################################################################
+
+
+```
+
+```{r}
+#Plots
+
+#Historical
+
+combined_data$mean_prediction <- combined_data$mean_prediction + 273.15
+
+# Combine all data frames into one
+combined_data <- bind_rows(past_data_list, .id = "Site_ID")
+
+# Plotting
+ggplot(combined_data, aes(x = datetime, y = mean_prediction, color = Site_ID)) +
+  geom_line() +
+  labs(x = "Date", y = "Mean Prediction", color = "Site ID") +
+  ggtitle("Historical Air Temperature Mean Prediction") +
+  theme_minimal()
+
+
+```
+
+
+#Bayesian state-space model 
+
+
+```{r}
+#unsused
+RandomWalk = "
+model{
+  
+  #### Data Model
+  for(t in 1:n){
+    y[t] ~ dnorm(x[t],tau_obs)
+  }
+  
+  #### Process Model
+  for(t in 2:n){
+    x[t]~dnorm(x[t-1],tau_add)
+  }
+  
+  #### Priors
+  x[1] ~ dnorm(x_ic,tau_ic)
+  tau_obs ~ dgamma(a_obs,r_obs)
+  tau_add ~ dgamma(a_add,r_add)
+}
+"
+```
+
+```{r}
+
+
+#Shorten Combined_data to past 100 rows, for testing purposes 
+
+combined_data <- combined_data[(nrow(combined_data)-99):nrow(combined_data), ]
+
+
+y <- combined_data$mean_prediction
+
+data <- list(y=log(y),n=length(y),      ## data
+             x_ic=log(1000),tau_ic=100, ## initial condition prior
+             a_obs=1,r_obs=1,           ## obs error prior
+             a_add=1,r_add=1            ## process error prior
+             )
+
+ef.out <- ecoforecastR::fit_dlm(model=list(obs="y",fixed="~ 1 + X"),data)
+#ef.out <- ecoforecastR::fit_dlm(model=list(obs="y",fixed="~ 1 + X + Tmin"),data)
+
+names(ef.out)
+
+
+```
+
+```{r}
+## parameter diagnostics
+params <- window(ef.out$params,start=1000) ## remove burn-in
+plot(params)
+summary(params)
+cor(as.matrix(params))
+pairs(as.matrix(params))
+
+## confidence interval
+out <- as.matrix(ef.out$predict)
+ci <- apply(exp(out),2,quantile,c(0.025,0.5,0.975))
+plot(time,ci[2,],type='n',ylim=range(y,na.rm=TRUE),ylab="Flu Index",log='y')
+ecoforecastR::ciEnvelope(time,ci[1,],ci[3,],col=ecoforecastR::col.alpha("lightBlue",0.75))
+points(time,y,pch="+",cex=0.5)
+
+```
+
+
+The JAGS model that was fit 'under the hood' is returned as `model`
+which we can view as:
+
+```{r, echo=FALSE}
+strsplit(ef.out$model,"\n",fixed = TRUE)[[1]]
+```
+
+
+
+
+
+```{r}
+
+
+
+out <- as.matrix(ef.out$predict)
+ci <- apply(exp(out),2,quantile,c(0.025,0.5,0.975))
+plot(time,ci[2,],type='n',ylim=range(y,na.rm=TRUE),ylab="Flu Index")
+## adjust x-axis label to be monthly if zoomed
+ecoforecastR::ciEnvelope(time,ci[1,],ci[3,],col=ecoforecastR::col.alpha("lightBlue",0.75))
+points(time,y,pch="+",cex=0.5)
+
+
+```
+
+
+
+
+
