@@ -2,6 +2,8 @@
 title: "Historical_time_series_fit"
 output: html_document
 date: "2024-03-18"
+editor_options: 
+  chunk_output_type: inline
 ---
 
 #Import Historical 
@@ -15,6 +17,21 @@ library(ggplot2)
 library(arrow)
 library(glue)
 library(readr)
+library(rjags)
+#library(rnoaa)
+library(daymetr)
+#devtools::install_github("EcoForecast/ecoforecastR",force=TRUE)
+library(ecoforecastR)
+library(zoo)
+library(padr)
+
+
+```
+
+
+
+```{r}
+
 
 target <- readr::read_csv("https://data.ecoforecast.org/neon4cast-targets/aquatics/aquatics-targets.csv.gz", guess_max = 1e6)
 
@@ -38,7 +55,7 @@ noaa_mean_historical <- function(df_past, site, var) {
     dplyr::group_by(date) |>
     dplyr::summarize(mean_prediction = mean(prediction, na.rm = TRUE), .groups = "drop") |>
     dplyr::rename(datetime = date) |>
-    dplyr::mutate(mean_prediction = if_else(var == "air_temperature", mean_prediction - 273.15, mean_prediction)) |>
+    dplyr::mutate(mean_prediction = if_else(var == "air_temperature", mean_prediction, mean_prediction)) |>
     dplyr::collect()
 }
 
@@ -89,27 +106,16 @@ for (site_id in site_ids) {
 save(past_data_list, file = "past_data_air_temperature.Rdata")
 
 ################################################################################
-#Future Forecast
-
-variable_of_interest <- c("air_temperature") # Adjust as needed
-future_data_list <- list()
-for (site_id in site_ids) {
-  # Forecast date for future data
-  forecast_date <- Sys.Date() - lubridate::days(50) # Adjust as needed, the latest date not sure
-  
-  # Process future forecast data for the site
-  df_future <- noaa_mean_forecast(site_id, variable_of_interest, forecast_date)
-  future_data_list[[site_id]] <- df_future
-}
-save(future_data_list, file = paste0("future_data_", variable_of_interest, ".Rdata"))
 
 
-################################################################################
+```
+
+```{r}
 #Plots
-
 
 #Historical
 
+combined_data$mean_prediction <- combined_data$mean_prediction + 273.15
 
 # Combine all data frames into one
 combined_data <- bind_rows(past_data_list, .id = "Site_ID")
@@ -121,19 +127,12 @@ ggplot(combined_data, aes(x = datetime, y = mean_prediction, color = Site_ID)) +
   ggtitle("Historical Air Temperature Mean Prediction") +
   theme_minimal()
 
+
 ```
+
 
 #Bayesian state-space model 
 
-```{r}
-library(rjags)
-#library(rnoaa)
-library(daymetr)
-#devtools::install_github("EcoForecast/ecoforecastR",force=TRUE)
-library(ecoforecastR)
-library(zoo)
-library(padr)
-```
 
 ```{r}
 #unsused
@@ -160,6 +159,7 @@ model{
 
 ```{r}
 
+
 #Shorten Combined_data to past 100 rows, for testing purposes 
 
 combined_data <- combined_data[(nrow(combined_data)-99):nrow(combined_data), ]
@@ -167,17 +167,11 @@ combined_data <- combined_data[(nrow(combined_data)-99):nrow(combined_data), ]
 
 y <- combined_data$mean_prediction
 
-
-data <- list(y=(y),n=length(y),      ## data
-             x_ic=(1000),tau_ic=100, ## initial condition prior
+data <- list(y=log(y),n=length(y),      ## data
+             x_ic=log(1000),tau_ic=100, ## initial condition prior
              a_obs=1,r_obs=1,           ## obs error prior
              a_add=1,r_add=1            ## process error prior
              )
-#data <- list(y=log(y),n=length(y),      ## data
-           #  x_ic=log(1000),tau_ic=100, ## initial condition prior
-            # a_obs=1,r_obs=1,           ## obs error prior
-            # a_add=1,r_add=1            ## process error prior
-            # )
 
 ef.out <- ecoforecastR::fit_dlm(model=list(obs="y",fixed="~ 1 + X"),data)
 #ef.out <- ecoforecastR::fit_dlm(model=list(obs="y",fixed="~ 1 + X + Tmin"),data)
@@ -188,6 +182,37 @@ names(ef.out)
 ```
 
 ```{r}
+## parameter diagnostics
+params <- window(ef.out$params,start=1000) ## remove burn-in
+plot(params)
+summary(params)
+cor(as.matrix(params))
+pairs(as.matrix(params))
+
+## confidence interval
+out <- as.matrix(ef.out$predict)
+ci <- apply(exp(out),2,quantile,c(0.025,0.5,0.975))
+plot(time,ci[2,],type='n',ylim=range(y,na.rm=TRUE),ylab="Flu Index",log='y')
+ecoforecastR::ciEnvelope(time,ci[1,],ci[3,],col=ecoforecastR::col.alpha("lightBlue",0.75))
+points(time,y,pch="+",cex=0.5)
+
+```
+
+
+The JAGS model that was fit 'under the hood' is returned as `model`
+which we can view as:
+
+```{r, echo=FALSE}
+strsplit(ef.out$model,"\n",fixed = TRUE)[[1]]
+```
+
+
+
+
+
+```{r}
+
+
 
 out <- as.matrix(ef.out$predict)
 ci <- apply(exp(out),2,quantile,c(0.025,0.5,0.975))
@@ -195,8 +220,6 @@ plot(time,ci[2,],type='n',ylim=range(y,na.rm=TRUE),ylab="Flu Index")
 ## adjust x-axis label to be monthly if zoomed
 ecoforecastR::ciEnvelope(time,ci[1,],ci[3,],col=ecoforecastR::col.alpha("lightBlue",0.75))
 points(time,y,pch="+",cex=0.5)
-
-
 
 
 ```
