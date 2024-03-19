@@ -62,9 +62,6 @@ noaa_mean_forecast <- function(site, var, reference_date) {
 # Variables of interest
 variable_of_interest <- "air_temperature" # Adjust as needed
 
-# Initialize lists to store data frames for "air_temperature"
-past_data_list <- list()
-
 # Loop through site IDs directly
 for (site_id in site_ids) {
   # Load historical data using neon4cast
@@ -72,11 +69,17 @@ for (site_id in site_ids) {
   
   # Fetch and process historical data for the site
   df_past_processed <- noaa_mean_historical(df_past, site_id, variable_of_interest)
-  past_data_list[[site_id]] <- df_past_processed
+  # Merge in past NOAA data into the targets file, matching by date.
+  site_target <- target |>
+    dplyr::select(datetime, site_id, variable, observation) |>
+    dplyr::filter(variable %in% c("temperature", "oxygen"), 
+                  site_id == site_id) |>
+    tidyr::pivot_wider(names_from = "variable", values_from = "observation") |>
+    dplyr::left_join(df_past_processed, by = c("datetime"))
 }
 
 # Save the past data for "air_temperature" across all sites
-save(past_data_list, file = "past_data_air_temperature.Rdata")
+save(site_target, file = "past_data.Rdata")
 
 ################################################################################
 #Future Forecast
