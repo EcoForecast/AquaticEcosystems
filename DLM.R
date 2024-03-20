@@ -41,6 +41,13 @@ site_temp <- temperature |>
 y <- site_ox$observation
 temp <- site_temp$observation
 
+# Assuming site_ox and site_temp are data frames with a datetime column
+merged_data <- merge(site_ox, site_temp, by = "datetime", all = FALSE)
+
+# Now, y and temp are vectors of the same length
+y <- merged_data$observation.x
+temp <- merged_data$observation.y
+
 data <- list(y=y,n=length(y),      ## data
              x_ic=log(1000),tau_ic=100, ## initial condition prior
              a_obs=1,r_obs=1,           ## obs error prior
