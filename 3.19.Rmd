@@ -1,0 +1,55 @@
+---
+title: "3.19"
+output: html_document
+date: "2024-03-20"
+---
+
+```{r}
+
+# Plotting
+ggplot(site_target, aes(x = datetime, y = oxygen, color = site_id)) +
+  geom_line() +
+  labs(x = "Date", y = "Oxygen", color = "Site ID") +
+  ggtitle("Historical Oxygen") +
+  theme_minimal()
+
+ggplot(site_target, aes(x = datetime, y = temperature, color = site_id)) +
+  geom_line() +
+  labs(x = "Date", y = "Water Temperature", color = "Site ID") +
+  ggtitle("Historical Water Temperature") +
+  theme_minimal()
+
+ggplot(site_target, aes(x = datetime, y = mean_prediction, color = site_id)) +
+  geom_line() +
+  labs(x = "Date", y = "Mean Prediction", color = "Site ID") +
+  ggtitle("Historical Air Temperature Mean Prediction") +
+  theme_minimal()
+
+```
+
+```{r}
+
+#Shorten Combined_data to past 100 rows, for testing purposes 
+
+#combined_data <- combined_data[(nrow(combined_data)-99):nrow(combined_data), ]
+
+y <- site_target$temperature #water temp
+
+data <- list(y=log(y),n=length(y),      ## data
+             x_ic=log(1000),tau_ic=100, ## initial condition prior
+             a_obs=1,r_obs=1,           ## obs error prior
+             a_add=1,r_add=1            ## process error prior
+             )
+
+ef.out <- ecoforecastR::fit_dlm(model=list(obs="y",fixed="~ 1 + X + oxygen + mean_prediction"),data) #oxygen + air temp
+#ef.out <- ecoforecastR::fit_dlm(model=list(obs="y",fixed="~ 1 + X + Tmin"),data)
+
+names(ef.out)
+
+
+```
+
+
+
+
+
