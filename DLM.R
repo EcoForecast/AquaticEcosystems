@@ -44,6 +44,8 @@ temp <- site_temp$observation
 # Assuming site_ox and site_temp are data frames with a datetime column
 merged_data <- merge(site_ox, site_temp, by = "datetime", all = FALSE)
 
+time <- merged_data$datetime
+
 # Now, y and temp are vectors of the same length
 y <- merged_data$observation.x
 temp <- merged_data$observation.y
@@ -64,7 +66,7 @@ cor(as.matrix(params))
 pairs(as.matrix(params))
 
 out <- as.matrix(ef.out$predict)
-ci <- apply(exp(out),2,quantile,c(0.025,0.5,0.975))
+ci <- apply(out,2,quantile,c(0.025,0.5,0.975))
 plot(time,ci[2,],
      type='n',
      ylim=range(y,na.rm=TRUE),
