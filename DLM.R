@@ -44,6 +44,8 @@ temp <- site_temp$observation
 # Assuming site_ox and site_temp are data frames with a datetime column
 merged_data <- merge(site_ox, site_temp, by = "datetime", all = FALSE)
 
+time <- merged_data$datetime
+
 # Now, y and temp are vectors of the same length
 y <- merged_data$observation.x
 temp <- merged_data$observation.y
@@ -56,3 +58,19 @@ data <- list(y=y,n=length(y),      ## data
 )
 
 ef.out <- ecoforecastR::fit_dlm(model=list(obs="y",fixed="~ 1 + X + temp"),data)
+
+params <- window(ef.out$params,start=1000)
+plot(params)
+summary(params)
+cor(as.matrix(params))
+pairs(as.matrix(params))
+
+out <- as.matrix(ef.out$predict)
+ci <- apply(out,2,quantile,c(0.025,0.5,0.975))
+plot(time,ci[2,],
+     type='n',
+     ylim=range(y,na.rm=TRUE),
+     ylab="Dissolved Oxygen",
+     )
+ecoforecastR::ciEnvelope(time,ci[1,],ci[3,],col=ecoforecastR::col.alpha("lightBlue",0.75))
+points(time,y,pch="+",cex=0.5)
