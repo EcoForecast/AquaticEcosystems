@@ -161,3 +161,20 @@ ecoforecastR::ciEnvelope(time2,N.I.ci[1,],N.I.ci[3,],col=col.alpha("black",1))
 lines(time2,N.I.ci[2,],lwd=0.5)
 
 Qmc <- 1/sqrt(params[prow,"Q"])
+
+
+### Uncertainty Analysis
+### calculation of variances
+varI     <- apply(N.I,2,var)
+varIP    <- apply(N.IP,2,var)
+varMat   <- rbind(varI,varIP)
+
+## in-sample stacked area plot
+V.pred.rel.in <- apply(varMat[-5,],2,function(x) {x/max(x)})
+plot(time2,V.pred.rel.in[1,],ylim=c(0,1),type='n',main="Relative Variance: In-Sample",ylab="Proportion of Variance",xlab="time")
+
+N.cols <- c("red","blue")
+
+ciEnvelope(time2,rep(0,ncol(V.pred.rel.in)),V.pred.rel.in[1,],col=N.cols[1])
+ciEnvelope(time2,V.pred.rel.in[1,],V.pred.rel.in[2,],col=N.cols[2])
+legend("topleft",legend=c("Process","InitCond"),col=rev(N.cols[-5]),lty=1,lwd=5)
