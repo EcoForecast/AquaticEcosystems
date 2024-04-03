@@ -124,6 +124,7 @@ points(x,y,pch="+",cex=0.5)
 
 lines(time2,forecast,col="purple",lwd=3)
 
+##########
 Nmc = 1000 
 prow = sample.int(nrow(params),Nmc,replace=TRUE)
 
@@ -139,5 +140,24 @@ ecoforecastR::ciEnvelope(x,ci[1,],ci[3,],col=ecoforecastR::col.alpha("lightBlue"
 points(x,y,pch="+",cex=0.5)
 
 N.I.ci = apply(N.I,2,quantile,c(0.025,0.5,0.975))
-ecoforecastR::ciEnvelope(time2,N.I.ci[1,],N.I.ci[3,],col=col.alpha("black",0.75))
+ecoforecastR::ciEnvelope(time2,N.I.ci[1,],N.I.ci[3,],col=col.alpha("black",1))
 lines(time2,N.I.ci[2,],lwd=0.5)
+
+##########
+N.IP <- forecastN(IC[prow,"x[1651]"], params[prow,"betaIntercept"], params[prow,"betaX"], Q = 0, n = Nmc)
+
+plot(x,ci[2,],
+     type='n',
+     ylim=range(y,na.rm=TRUE),
+     ylab="Dissolved Oxygen",
+     xlim = c(1500,length(ci[2,]) + NT),
+)
+ecoforecastR::ciEnvelope(x,ci[1,],ci[3,],col=ecoforecastR::col.alpha("lightBlue",0.75))
+points(x,y,pch="+",cex=0.5)
+
+N.IP.ci = apply(N.IP,2,quantile,c(0.025,0.5,0.975))
+ecoforecastR::ciEnvelope(time2,N.IP.ci[1,],N.IP.ci[3,],col=col.alpha("red",1))
+ecoforecastR::ciEnvelope(time2,N.I.ci[1,],N.I.ci[3,],col=col.alpha("black",1))
+lines(time2,N.I.ci[2,],lwd=0.5)
+
+Qmc <- 1/sqrt(params[prow,"Q"])
