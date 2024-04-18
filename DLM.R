@@ -13,6 +13,9 @@ library(ecoforecastR)
 library(zoo)
 library(padr)
 
+
+DLM_function <- function() {
+
 target <- readr::read_csv("https://data.ecoforecast.org/neon4cast-targets/aquatics/aquatics-targets.csv.gz", guess_max = 1e6)
 oxygen <- target |> 
   dplyr::filter(variable == "oxygen")
@@ -276,3 +279,4 @@ N.cols <- c("red","blue")
 ciEnvelope(time2,rep(0,ncol(V.pred.rel.in)),V.pred.rel.in[1,],col=N.cols[1])
 ciEnvelope(time2,V.pred.rel.in[1,],V.pred.rel.in[2,],col=N.cols[2])
 legend("topleft",legend=c("Process","InitCond"),col=rev(N.cols[-5]),lty=1,lwd=5)
+}
