@@ -3,6 +3,8 @@
 library(tidyverse)
 #library(neon4cast)
 library(lubridate)
+install.packages("daymetr")
+install.packages("padr")
 #install.packages("rMR")
 #library(rMR)
 
@@ -36,8 +38,12 @@ team_info <- list(team_name = "AquaticEcosystems",
 
 ## Load required functions
 if(file.exists("site_temp_oxygen_data.R"))      source("site_temp_oxygen_data.R")
-if(file.exists("NOAA_Forecast_download.R"))    source("NOAA_Forecast_download.R")
+# if(file.exists("NOAA_Forecast_download.R"))    source("NOAA_Forecast_download.R")
 if(file.exists("DLM.R"))    source("DLM.R")
+
+# DLM model
+
+dlm <- DLM_function()
 
 ### Step 1: Download Required Data
 download <- download_targets()       ## Y variables
