@@ -3,6 +3,7 @@
 library(tidyverse)
 #library(neon4cast)
 library(lubridate)
+install.packages("daymetr")
 #install.packages("rMR")
 #library(rMR)
 
