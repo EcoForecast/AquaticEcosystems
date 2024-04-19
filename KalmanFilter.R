@@ -29,6 +29,7 @@ DLM_function <- function() {
   params <- window(ef.out$params, start = 1000)
   summary_params <- summary(params)
 
+
   # Initial conditions for Kalman Filter
   mu0 <- as.numeric(head(y, 1))  # First observation of y
   P0 <- diag(10, length(mu0))    # Large initial covariance
@@ -44,28 +45,6 @@ DLM_function <- function() {
   ))
 }
 
-# Run the DLM function to get initial parameters
-results <- DLM_function()
-
-# Define the number of states based on your data
-nstates <- length(results$Y)  # This should actually be 1 since we have one state variable
-
-# Define a simple state transition matrix M, assuming simple evolution without spatial interactions
-alpha <- 0.05
-M <- diag(1 - alpha, nstates)
-
-# Define the error covariance matrices with correct dimensions
-tau_proc <- rep(0.01, nstates)
-Q <- diag(diag(tau_proc))
-tau_obs <- var(results$Y, na.rm = TRUE)
-R <- diag(tau_obs, nstates)
-
-# Initial conditions based on historical data or estimated from DLM
-mu0 <- results$mu0
-P0 <- results$P0
-
-# Ensure Y is a column matrix for consistency in Kalman Filter
-Y <- matrix(results$Y, ncol = 1)
 
 # Kalman Filter functions
 KalmanAnalysis <- function(mu.f, P.f, Y, R, H, I){
@@ -114,6 +93,32 @@ KalmanFilter <- function(M, mu0, P0, Q, R, Y){
   
   return(list(mu.f=mu.f, mu.a=mu.a, P.f=P.f, P.a=P.a))
 }
+
+
+
+# Run the DLM function to get initial parameters
+results <- DLM_function()
+
+# Define the number of states based on your data
+nstates <- length(results$Y)  # This should actually be 1 since we have one state variable
+
+# Define a simple state transition matrix M, assuming simple evolution without spatial interactions
+alpha <- 0.05
+M <- diag(1 - alpha, nstates)
+
+# Define process and observation error
+tau_proc <- rep(0.01, nstates)
+Q <- diag(diag(tau_proc))
+tau_obs <- results$DLM_results$data$OBS# var(results$Y, na.rm = TRUE)
+R <- diag(tau_obs, nstates)
+
+# Initial conditions based on historical data or estimated from DLM
+mu0 <- results$mu0
+P0 <- results$P0
+
+# Prepare the observation vector Y
+Y <- matrix(results$Y, ncol = 1)
+
 KF_results <- KalmanFilter(M, mu0, P0, Q, R, Y)
 
 # Plot the actual and predicted oxygen levels
@@ -122,9 +127,37 @@ actual <- results$Y
 predicted <- matrix(KF_results$mu.a, ncol = 1)  # Ensure predicted is a column matrix
 
 df <- data.frame(Time = time, Actual = actual, Predicted = predicted)
-ggplot(df, aes(x = Time)) +
-  geom_line(aes(y = Actual), color = "blue") +
-  geom_line(aes(y = Predicted), color = "red") +
-  labs(y = "Oxygen Level", 
-       title = "Actual vs Predicted Oxygen Levels",
-       subtitle = "Blue: Actual, Red: Predicted")
+
+
+# Assume `KF_results` and `time` are from the previous code
+time <- results$time
+mu.f <- KF_results$mu.f
+mu.a <- KF_results$mu.a
+P.f <- KF_results$P.f
+P.a <- KF_results$P.a
+
+# Convert time to Date format if not already
+time <- as.Date(time)
+
+## Subset time
+time2 <- time[time > as.Date("2015-01-01")]
+tsel <- which(time %in% time2)
+
+time <- as.Date(time)  # Convert time to Date if not already
+time2 <- time[time > as.Date("2015-01-01")]
+tsel <- which(time %in% time2)
+
+n = length(time2) * 2
+mu = p = rep(NA, n)
+mu[seq(1, n, by = 2)] = mu.f[tsel]
+mu[seq(2, n, by = 2)] = mu.a[tsel]
+p[seq(1, n, by = 2)] = 1.96 * sqrt(P.f[tsel])
+p[seq(2, n, by = 2)] = 1.96 * sqrt(P.a[tsel])
+ci = cbind(mu - p, mu + p)
+time3 = sort(c(time2, time2 + 1))
+
+# Plotting
+plot(time3, mu, ylim = range(ci), type = 'n', xlab = "Time", ylab = "Oxygen Level", main = "Forecast and Analysis with Confidence Intervals")
+ecoforecastR::ciEnvelope(time3, ci[, 1], ci[, 2], col = "lightBlue")
+lines(time3, mu, lwd = 2)
+points(time[tsel], results$Y[tsel], pch = 19)  # add actual observations
