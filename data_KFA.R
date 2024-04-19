@@ -20,7 +20,7 @@ DLM_function <- function() {
   data <- list(y = y, n = length(y))
 
   # Define the DLM model; simplified model since `X` isn't used
-  model <- list(obs = "y", fixed = "~ 1 + X", n.iter = 2000)
+  model <- list(obs = "y", fixed = "~ 1", n.iter = 10000)
 
   # Run the DLM
   ef.out <- ecoforecastR::fit_dlm(model = model, data = data)
@@ -28,7 +28,6 @@ DLM_function <- function() {
   # Extract and process results from DLM
   params <- window(ef.out$params, start = 1000)
   summary_params <- summary(params)
-
 
   # Initial conditions for Kalman Filter
   mu0 <- as.numeric(head(y, 1))  # First observation of y
@@ -99,65 +98,46 @@ KalmanFilter <- function(M, mu0, P0, Q, R, Y){
 # Run the DLM function to get initial parameters
 results <- DLM_function()
 
-# Define the number of states based on your data
-nstates <- length(results$Y)  # This should actually be 1 since we have one state variable
-
 # Define a simple state transition matrix M, assuming simple evolution without spatial interactions
 alpha <- 0.05
-M <- diag(1 - alpha, nstates)
+M <- diag(1 - alpha, length(results$Y))
 
 # Define process and observation error
-tau_proc <- rep(0.01, nstates)
+tau_proc <- rep(0.01, length(results$Y))
 Q <- diag(diag(tau_proc))
-tau_obs <- results$DLM_results$data$OBS# var(results$Y, na.rm = TRUE)
-R <- diag(tau_obs, nstates)
-
-# Initial conditions based on historical data or estimated from DLM
-mu0 <- results$mu0
-P0 <- results$P0
+tau_obs <- var(results$Y, na.rm = TRUE)
+R <- diag(tau_obs, length(results$Y))
 
 # Prepare the observation vector Y
 Y <- matrix(results$Y, ncol = 1)
 
-KF_results <- KalmanFilter(M, mu0, P0, Q, R, Y)
+# Run the Kalman Filter
+KF_results <- KalmanFilter(M, results$mu0, results$P0, Q, R, Y)
 
-# Plot the actual and predicted oxygen levels
-time <- results$time
-actual <- results$Y
-predicted <- matrix(KF_results$mu.a, ncol = 1)  # Ensure predicted is a column matrix
+# Forecasting for the next 16 days
+last_mu <- tail(KF_results$mu.a, 1)
+last_P <- tail(KF_results$P.a, 1)
+forecast_length <- 30
+forecast_mu <- numeric(forecast_length)
+forecast_P <- numeric(forecast_length)
+for (i in 1:forecast_length) {
+  forecast_result <- KalmanForecast(last_mu, last_P, M, Q)
+  forecast_mu[i] <- forecast_result$mu.f
+  last_mu <- forecast_result$mu.f
+  last_P <- forecast_result$P.f
+}
+forecast_dates <- seq(max(results$time) + 1, by = "day", length.out = forecast_length)
 
-df <- data.frame(Time = time, Actual = actual, Predicted = predicted)
+# Combining actual and forecasted results for plotting
+full_mu <- c(KF_results$mu.a, forecast_mu)
+full_time <- c(results$time, forecast_dates)
+full_p <- c(sqrt(KF_results$P.a), sqrt(forecast_P)) * 1.96  # 95% CI
+ci <- cbind(full_mu - full_p, full_mu + full_p)
 
+# Plotting actual and forecasted results with confidence intervals
+plot(as.Date(full_time), full_mu, type = 'n', xlab = "Time", ylab = "Oxygen Level", main = "Forecast and Analysis with Confidence Intervals")
+ecoforecastR::ciEnvelope(as.Date(full_time), ci[, 1], ci[, 2], col = "lightBlue")
+lines(as.Date(full_time), full_mu, lwd = 2)
+points(as.Date(results$time), results$Y, pch = 19)  # Actual observations
+points(as.Date(forecast_dates), forecast_mu, pch = 19, col = 'red')  # Forecasted points
 
-# Assume `KF_results` and `time` are from the previous code
-time <- results$time
-mu.f <- KF_results$mu.f
-mu.a <- KF_results$mu.a
-P.f <- KF_results$P.f
-P.a <- KF_results$P.a
-
-# Convert time to Date format if not already
-time <- as.Date(time)
-
-## Subset time
-time2 <- time[time > as.Date("2015-01-01")]
-tsel <- which(time %in% time2)
-
-time <- as.Date(time)  # Convert time to Date if not already
-time2 <- time[time > as.Date("2015-01-01")]
-tsel <- which(time %in% time2)
-
-n = length(time2) * 2
-mu = p = rep(NA, n)
-mu[seq(1, n, by = 2)] = mu.f[tsel]
-mu[seq(2, n, by = 2)] = mu.a[tsel]
-p[seq(1, n, by = 2)] = 1.96 * sqrt(P.f[tsel])
-p[seq(2, n, by = 2)] = 1.96 * sqrt(P.a[tsel])
-ci = cbind(mu - p, mu + p)
-time3 = sort(c(time2, time2 + 1))
-
-# Plotting
-plot(time3, mu, ylim = range(ci), type = 'n', xlab = "Time", ylab = "Oxygen Level", main = "Forecast and Analysis with Confidence Intervals")
-ecoforecastR::ciEnvelope(time3, ci[, 1], ci[, 2], col = "lightBlue")
-lines(time3, mu, lwd = 2)
-points(time[tsel], results$Y[tsel], pch = 19)  # add actual observations
