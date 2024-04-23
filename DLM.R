@@ -44,6 +44,19 @@ site_temp <- temperature |>
 y <- site_ox$observation
 temp <- site_temp$observation
 
+
+### Weather Forecast Data ###
+reference_date <- Sys.Date() - 1
+
+df_future <- neon4cast::noaa_stage2(start_date = as.character(reference_date))
+
+## filter available forecasts by date and variable
+met_future <- df_future |> 
+  dplyr::filter(datetime >= lubridate::as_datetime(reference_date), 
+                variable %in% c("air_temperature")) |>
+                filter(site_id == site) |> 
+  dplyr::collect()
+
 # Assuming site_ox and site_temp are data frames with a datetime column
 merged_data <- merge(site_ox, site_temp, by = "datetime", all = FALSE)
 
