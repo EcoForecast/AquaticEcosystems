@@ -1,7 +1,6 @@
 library(neon4cast)
 library(dplyr)
 library(lubridate)
-library(ggplot2)
 library(arrow)
 library(glue)
 library(readr)
@@ -14,7 +13,7 @@ library(zoo)
 library(padr)
 
 
-DLM_function <- function() {
+DLM_function <- function(site) {
 
 target <- readr::read_csv("https://data.ecoforecast.org/neon4cast-targets/aquatics/aquatics-targets.csv.gz", guess_max = 1e6)
 oxygen <- target |> 
@@ -34,7 +33,7 @@ site_ids <- site_data$field_site_id
 # Load historical data using neon4cast
 # df_past <- neon4cast::noaa_stage3()
 
-site = "BARC"
+#site = "ARIK"
 
 site_ox <- oxygen |> 
   dplyr::filter(site_id == site)
@@ -46,44 +45,64 @@ temp <- site_temp$observation
 
 
 ### Weather Forecast Data ###
-reference_date <- Sys.Date() - 1
 
-df_future <- neon4cast::noaa_stage2(start_date = as.character(reference_date))
+### Weather Hindcast Data ###
+noaa_mean_historical <- function(df_past, site, var) {
+  df_past |>
+    dplyr::filter(site_id == site, variable == var) |>
+    dplyr::rename(ensemble = parameter) |>
+    dplyr::select(datetime, prediction, ensemble) |>
+    dplyr::mutate(date = as_date(datetime)) |>
+    dplyr::group_by(date) |>
+    dplyr::summarize(mean_prediction = mean(prediction, na.rm = TRUE), .groups = "drop") |>
+    dplyr::rename(datetime = date) |>
+    dplyr::mutate(mean_prediction = if_else(var == "air_temperature", mean_prediction - 273.15, mean_prediction)) |>
+    dplyr::collect() 
+}
 
-## filter available forecasts by date and variable
-met_future <- df_future |> 
-  dplyr::filter(datetime >= lubridate::as_datetime(reference_date), 
-                variable %in% c("air_temperature")) |>
-                filter(site_id == site) |> 
-  dplyr::collect()
+df_past <- neon4cast::noaa_stage3()
+
+# Fetch and process historical data for the site
+df_past_processed <- noaa_mean_historical(df_past, site, "air_temperature")
+# Merge in past NOAA data into the targets file, matching by date.
+site_target <- target |>
+  dplyr::select(datetime, site_id, variable, observation) |>
+  dplyr::filter(variable %in% c("temperature", "oxygen"), 
+                site_id == site_id) |>
+  tidyr::pivot_wider(names_from = "variable", values_from = "observation") |>
+  dplyr::left_join(df_past_processed, by = c("datetime"))
+
 
 # Assuming site_ox and site_temp are data frames with a datetime column
-merged_data <- merge(site_ox, site_temp, by = "datetime", all = FALSE)
+merged_data <- merge(site_ox, df_past_processed, by = "datetime", all = FALSE)
 
 time <- merged_data$datetime
 
 # Now, y and temp are vectors of the same length
-y <- merged_data$observation.x
-temp <- merged_data$observation.y
+y <- merged_data$observation
+temp <- merged_data$mean_prediction
 
-data <- list(y=y,n=length(y),      ## data
-             x_ic=log(1000),tau_ic=100, ## initial condition prior
-             a_obs=1,r_obs=1,           ## obs error prior
-             a_add=1,r_add=1,           ## process error prior
+data <- list(y = y,n = length(y),
+             x_ic=mean(y, na.rm = T),
+             tau_ic= 1/sd(y),
+             a_obs=1,
+             r_obs=1,          
+             a_add=1,
+             r_add=1,           
              temp = temp
 )
 
 #model = list(obs="y",fixed="~ 1 + X + temp", n.iternumber = 20000)
 
-model = list(obs="y",fixed="~ 1 + X", n.iternumber = 20000)
+model = list(obs="y",fixed="~ 1 + X + temp", n.iternumber = 10000)
 
 ef.out <- ecoforecastR::fit_dlm(model=model,data)
 
 params <- window(ef.out$params,start=1000)
 plot(params)
 summary(params)
-cor(as.matrix(params))
-pairs(as.matrix(params))
+#cor(as.matrix(params))
+#pairs(as.matrix(params))
 
 out <- as.matrix(ef.out$predict)
 ci <- apply(out,2,quantile,c(0.025,0.5,0.975))
@@ -100,13 +119,13 @@ points(time,y,pch="+",cex=0.5)
 #### Milestone 6 ####
 
 
-forecastN <- function(IC ,betaIntercept, betaX ,Q=0,n=Nmc){
+forecastN <- function(IC, betaIntercept, betaX, betaTemp, temp , Q = 0, n = Nmc){
 
   NT = 30
   N <- matrix(NA,n,NT)  ## storage
   Nprev <- IC           ## initialize
   for(t in 1:NT){
-    mu = Nprev + betaX * Nprev + betaIntercept ## mean
+    mu = Nprev + betaX * Nprev + betaTemp * temp[t] + betaIntercept  ## mean
     N[,t] <- rnorm(n,mu,Q)                         ## predict next step
     Nprev <- N[,t]                                  ## update IC
   }
@@ -114,42 +133,67 @@ forecastN <- function(IC ,betaIntercept, betaX ,Q=0,n=Nmc){
 }
 
 ## parameters
+
+reference_date <- Sys.Date() - 1
+
+df_future <- neon4cast::noaa_stage2(start_date = as.character(reference_date))
+
+noaa_air_temp_future <- df_future |> 
+  dplyr::filter(datetime >= lubridate::as_datetime(reference_date), 
+                variable %in% c("air_temperature")) |>
+  dplyr::filter(site_id == site) |> 
+  dplyr::rename(ensemble = parameter) |> 
+  dplyr::select(datetime, prediction, ensemble) |> 
+  dplyr::mutate(date = as_date(datetime)) |> 
+  dplyr::group_by(date) |> 
+  dplyr::summarize(mean_prediction = mean(prediction, na.rm = TRUE), .groups = "drop") |> 
+  dplyr::rename(datetime = date) |> 
+  dplyr::collect() |> 
+  dplyr::mutate(mean_prediction = mean_prediction - 273.15)
+
+
 params <- as.matrix(ef.out$params)
 param.mean <- apply(params,2,mean)
 
 IC <- as.matrix(ef.out$predict)
 
 
-forecast <- forecastN(mean(IC[,"x[1651]"]), param.mean[1], param.mean[2], Q = 0, n = 1)
+#forecast <- forecastN(mean(IC[,"x[1035]"]), param.mean[1], param.mean[2], param.mean[3], noaa_air_temp_future, Q = 0, n = 1)
 NT = 30
 time1 = 1:NT
-
-
 x = 1:length(ci[2,])
 
 time2 = length(x):(length(x)+NT-1)
+
+Nmc = 1000
+prow = sample.int(nrow(params),Nmc,replace=TRUE)
+forecast <- forecastN(IC[prow, ncol(IC)], params[prow,"betaIntercept"], params[prow,"betaX"], params[prow, "betatemp"], noaa_air_temp_future$mean_prediction, Q = 0, n = Nmc)
+
+par(mfrow=c(1,1))
 
 plot(x,ci[2,],
      type='n',
      ylim=range(y,na.rm=TRUE),
      ylab="Dissolved Oxygen",
-     xlim = c(1500,length(ci[2,]) + NT),
-     xlab = "Time Step",
-     main = "Forecast"
-     )
+     # xlim = c(1500,length(ci[2,]) + NT),
+     xlim = c(min(time2) - 30, max(time2)),
+     main = "Forecast with IC and Parameter Uncertainty"
+)
 ecoforecastR::ciEnvelope(x,ci[1,],ci[3,],col=ecoforecastR::col.alpha("lightBlue",0.75))
 points(x,y,pch="+",cex=0.5)
 
-lines(time2,forecast,col="purple",lwd=3)
-legend("bottomright", legend = c("Data", "CI", "Forecast"), lty = c(NA,1,1), col = c("black", "lightblue", "purple"), pch = c("+", NA, NA), cex = 0.7)
+N.IP.ci = apply(forecast,2,quantile,c(0.025,0.5,0.975))
+ecoforecastR::ciEnvelope(time2,N.IP.ci[1,],N.IP.ci[3,],col=col.alpha("lightBlue",1))
+lines(time2,N.IP.ci[2,],lwd=0.5)
+legend("bottomright", legend = c("Data", "CI", "IC Uncertainty", "Parameter Uncertainty"), lty = c(NA,1,1,1), col = c("black", "lightblue", "black", "red"), pch = c("+", NA, NA, NA), cex = 0.7)
 
 
 ###### Organize Output into EFI Standard ######
 
 forecast_date <- Sys.Date()
 
-forecast_dates <- seq(max(site_ox$datetime) + days(1), by = "day", length.out = 30)
-forecast_efi <- data.frame(prediction = as.vector(forecast))
+forecast_dates <- seq(Sys.Date()-1, by = "day", length.out = 30)
+forecast_efi <- data.frame(prediction = as.vector(N.IP.ci[2,]))
 #cbind(forecast_efi,forecast)
 forecast_efi <- forecast_efi |> 
   dplyr::mutate(reference_datetime = forecast_date,
@@ -232,47 +276,7 @@ neon4cast::submit(forecast_file = forecast_file, ask = FALSE)
 
 
 
-
 ##########
-Nmc = 1000 
-prow = sample.int(nrow(params),Nmc,replace=TRUE)
-
-N.I <- forecastN(IC[prow,"x[1651]"], param.mean[1], param.mean[2], Q = 0, n = Nmc)
-
-plot(x,ci[2,],
-     type='n',
-     ylim=range(y,na.rm=TRUE),
-     ylab="Dissolved Oxygen",
-     xlim = c(1500,length(ci[2,]) + NT),
-     xlab = "Time Step",
-     main = "Forecast with Initial Condition Uncertainty"
-)
-ecoforecastR::ciEnvelope(x,ci[1,],ci[3,],col=ecoforecastR::col.alpha("lightBlue",0.75))
-points(x,y,pch="+",cex=0.5)
-
-N.I.ci = apply(N.I,2,quantile,c(0.025,0.5,0.975))
-ecoforecastR::ciEnvelope(time2,N.I.ci[1,],N.I.ci[3,],col=col.alpha("black",1))
-lines(time2,N.I.ci[2,],lwd=0.5)
-legend("bottomright", legend = c("Data", "CI", "IC Uncertainty"), lty = c(NA,1,1), col = c("black", "lightblue", "black"), pch = c("+", NA, NA), cex = 0.7)
-
-##########
-N.IP <- forecastN(IC[prow,"x[1651]"], params[prow,"betaIntercept"], params[prow,"betaX"], Q = 0, n = Nmc)
-
-plot(x,ci[2,],
-     type='n',
-     ylim=range(y,na.rm=TRUE),
-     ylab="Dissolved Oxygen",
-     xlim = c(1500,length(ci[2,]) + NT),
-     main = "Forecast with IC and Parameter Uncertainty"
-)
-ecoforecastR::ciEnvelope(x,ci[1,],ci[3,],col=ecoforecastR::col.alpha("lightBlue",0.75))
-points(x,y,pch="+",cex=0.5)
-
-N.IP.ci = apply(N.IP,2,quantile,c(0.025,0.5,0.975))
-ecoforecastR::ciEnvelope(time2,N.IP.ci[1,],N.IP.ci[3,],col=col.alpha("red",1))
-ecoforecastR::ciEnvelope(time2,N.I.ci[1,],N.I.ci[3,],col=col.alpha("black",1))
-lines(time2,N.I.ci[2,],lwd=0.5)
-legend("bottomright", legend = c("Data", "CI", "IC Uncertainty", "Parameter Uncertainty"), lty = c(NA,1,1,1), col = c("black", "lightblue", "black", "red"), pch = c("+", NA, NA, NA), cex = 0.7)
 
 #Qmc <- 1/sqrt(params[prow,"Q"])
 
