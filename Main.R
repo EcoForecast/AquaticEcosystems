@@ -40,6 +40,7 @@ team_info <- list(team_name = "AquaticEcosystems",
 if(file.exists("site_temp_oxygen_data.R"))      source("site_temp_oxygen_data.R")
 # if(file.exists("NOAA_Forecast_download.R"))    source("NOAA_Forecast_download.R")
 if(file.exists("DLM.R"))    source("DLM.R")
+if(file.exists("Forecast_Submit.R"))            source("Forecast_Submit.R")
 
 ### Step 1: Download Required Data
 download <- download_targets()       ## Y variables
@@ -47,11 +48,12 @@ download <- download_targets()       ## Y variables
 target <- download[[1]]
 site_names <- download[[2]]
 
+forecasts <- data.frame() # Empty data frame, will fill with each site's forecast
+
 # DLM model
 for(site in site_names){
-  
-  dlm <- DLM_function(site)
-  
+  dlm <- DLM_function(site) # Get prediction for the site
+  forecasts <- rbind(forecasts, dlm) # Add predictions to the data frame
 }
 
 
