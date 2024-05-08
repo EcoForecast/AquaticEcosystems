@@ -1,0 +1,73 @@
+---
+title: "Forecast_Assessment"
+output: html_document
+date: "2024-05-08"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r cars}
+library(arrow)
+
+```
+
+```{r}
+all_results <- arrow::open_dataset("s3://anonymous@bio230014-bucket01/challenges/forecasts/parquet/project_id=neon4cast/duration=P1D/variable=oxygen/model_id=AquaticEcosystemsOxygen?endpoint_override=sdsc.osn.xsede.org")
+df <- all_results |> dplyr::collect()
+
+
+```
+
+```{r}
+target <- readr::read_csv("https://data.ecoforecast.org/neon4cast-targets/aquatics/aquatics-targets.csv.gz", guess_max = 1e6)
+oxygen <- target |> 
+  dplyr::filter(variable == "oxygen")
+```
+
+```{r}
+
+```
+
+```{r}
+# Step 1: Filter the prediction data for site "WLOU" and reference_datetime "2024-05-01"
+filtered_predictions <- subset(df, site_id == "WLOU" & reference_datetime == as.Date("2024-05-01"))
+
+# Step 2: Merge the filtered predictions with the observation data
+comparison_data <- merge(filtered_predictions, oxygen, by = c("site_id", "datetime"))
+
+# Step 3: Calculate the difference between predicted and observed values
+comparison_data$prediction_error <- comparison_data$prediction - comparison_data$observation
+
+# Optionally, you can view the first few rows to check the results
+head(comparison_data)
+
+# Further analysis, like summary statistics
+summary(comparison_data$prediction_error)
+
+# Plotting the difference can also be insightful
+library(ggplot2)
+ggplot(comparison_data, aes(x = datetime, y = prediction_error)) +
+  geom_line() +
+  labs(title = "Prediction Error Over Time", x = "Datetime", y = "Prediction Error")
+
+```
+
+```{r}
+
+# Load the ggplot2 library
+library(ggplot2)
+
+# Create a line plot with both predictions and observations
+ggplot(comparison_data, aes(x = datetime)) +
+  geom_line(aes(y = prediction, colour = "Predicted"), size = 1) +
+  geom_line(aes(y = observation, colour = "Observed"), size = 1) +
+  labs(title = "Predicted vs Observed Values Over Time",
+       x = "Datetime",
+       y = "Value",
+       colour = "Legend") +
+  theme_minimal() +
+  scale_colour_manual(values = c("Predicted" = "blue", "Observed" = "red"))
+
+```
